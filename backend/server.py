@@ -18,6 +18,7 @@ import google.auth
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from google.oauth2 import service_account
 from google.auth.exceptions import TransportError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -29,7 +30,6 @@ from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Load .env if python-dotenv is installed (pip install python-dotenv).
 try:
     from dotenv import load_dotenv
 
@@ -37,26 +37,39 @@ try:
 except ImportError:
     pass
 
-#Server Json Reading Way Not To Be Confused with Local Development:
-base64_creds = os.environ.get("GCP_CREDS")
-if base64_creds:
-    json_creds_bytes = base64.b64decode(base64_creds)
-    creds_dict = json.loads(json_creds_bytes)
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", creds_dict)
-
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
-# Credentials are safe to share. The HTTP connection is NOT (httplib2 isn't
-# thread-safe), so the Drive `service` is built per call in get_service().
-creds, _ = google.auth.default(scopes=SCOPES)
-
-_zip_password = os.environ.get("HUBBY_PASSWORD")
-if not _zip_password:
-    raise RuntimeError(
-        "ZIP_PASSWORD is not set. Put ZIP_PASSWORD=yourpassword in a .env file "
-        "(with python-dotenv installed) or export it in your terminal."
+# Server: GCP_CREDS holds base64 of the service-account JSON.
+# Local: falls back to Application Default Credentials.
+_base64_creds = os.environ.get("GCP_CREDS")
+if _base64_creds:
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(base64.b64decode(_base64_creds)), scopes=SCOPES
     )
-ZIP_PASSWORD = _zip_password.encode()  # pyzipper needs bytes
+else:
+    creds, _ = google.auth.default(scopes=SCOPES)
+
+# One zip password per gallery, looked up by zip id (no shared global).
+HUBBY_ZIP_ID = os.environ.get("HUBBY_ZIP_ID", "1T9LFvSC-iKlFZVHI1zEnQyRJfrsipauN")
+WIFEY_ZIP_ID = os.environ.get("WIFEY_ZIP_ID", "11Xh4U2T2u9b7ItpIllDtR58QFkZ1eyOp")
+
+_hubby_pw = os.environ.get("HUBBY_PASSWORD")
+_wifey_pw = os.environ.get("WIFEY_PASSWORD")
+if not _hubby_pw or not _wifey_pw:
+    raise RuntimeError("Set HUBBY_PASSWORD and WIFEY_PASSWORD in your environment or .env file.")
+
+ZIP_PASSWORDS = {
+    HUBBY_ZIP_ID: _hubby_pw.encode(),  # pyzipper needs bytes
+    WIFEY_ZIP_ID: _wifey_pw.encode(),
+}
+
+
+def password_for(zip_file_id: str) -> bytes:
+    try:
+        return ZIP_PASSWORDS[zip_file_id]
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown gallery")
+
 
 app = FastAPI()
 
@@ -69,26 +82,23 @@ app.add_middleware(
 )
 
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
-EXTRACT_DIR = os.path.join(BASE_DIR, "extracted")  # one subfolder per zip_file_id
-META_DIR = os.path.join(BASE_DIR, "meta")  # one <zip_file_id>.md5 per zip (cache version stamp)
+EXTRACT_DIR = os.path.join(BASE_DIR, "extracted")
+META_DIR = os.path.join(BASE_DIR, "meta")
 for _d in (TEMP_DIR, EXTRACT_DIR, META_DIR):
     os.makedirs(_d, exist_ok=True)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm"}
 
-# Drive file IDs are letters, digits, "_" and "-". Anything else is rejected,
-# which also blocks path tricks like ".." in zip_file_id.
 DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 # ---------------------------------------------------------------------------
-# Networking helpers: per-call service + retries
+# Networking helpers
 # ---------------------------------------------------------------------------
-# Errors that are usually transient (dropped connection, token endpoint hiccup).
 RETRYABLE = (
     TransportError,
-    ConnectionError,  # includes RemoteDisconnected / ConnectionResetError
+    ConnectionError,
     TimeoutError,
     ssl.SSLError,
     httplib2.HttpLib2Error,
@@ -96,12 +106,11 @@ RETRYABLE = (
 
 
 def get_service():
-    """A fresh Drive client (with its own HTTP connection) for every call."""
+    """A fresh Drive client (own HTTP connection) per call; httplib2 isn't thread-safe."""
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
 def with_retries(fn, attempts: int = 4):
-    """Run fn(); on a transient network error, wait and try again."""
     for attempt in range(attempts):
         try:
             return fn()
@@ -129,7 +138,7 @@ def network_http_error() -> HTTPException:
 
 
 # ---------------------------------------------------------------------------
-# Per-zip locks (re-entrant so a locked section can call ensure_extracted)
+# Per-zip locks
 # ---------------------------------------------------------------------------
 _locks: dict[str, threading.RLock] = {}
 _locks_guard = threading.Lock()
@@ -141,12 +150,7 @@ def lock_for(zip_file_id: str) -> threading.RLock:
 
 
 # ---------------------------------------------------------------------------
-# File hashing + cache version stamp
-#
-# After every extract or upload we save the zip's MD5 in meta/<id>.md5.
-# Drive reports the same MD5 (md5Checksum) for the file, so comparing the two
-# tells us whether our extracted folder is still up to date WITHOUT
-# downloading the zip.
+# Hashing + cache version stamp
 # ---------------------------------------------------------------------------
 def _hash_file(path: str, algo: str) -> str:
     h = hashlib.new(algo)
@@ -182,8 +186,6 @@ def write_local_md5(zip_file_id: str, md5: str) -> None:
 
 
 def get_remote_md5(file_id: str) -> str | None:
-    """Ask Drive for just the zip's checksum: a tiny metadata call, no download."""
-
     def attempt():
         svc = get_service()
         meta = svc.files().get(fileId=file_id, fields="md5Checksum").execute(num_retries=3)
@@ -196,12 +198,10 @@ def get_remote_md5(file_id: str) -> str | None:
 # Drive helpers
 # ---------------------------------------------------------------------------
 def download_to_disk(file_id: str, save_path: str) -> str:
-    """Download a Drive file straight to disk (no memory buffer)."""
-
     def attempt():
         svc = get_service()
         request = svc.files().get_media(fileId=file_id)
-        with io.FileIO(save_path, "wb") as fh:  # "wb" restarts the file on each retry
+        with io.FileIO(save_path, "wb") as fh:
             downloader = MediaIoBaseDownload(fh, request)
             done = False
             while not done:
@@ -214,15 +214,13 @@ def download_to_disk(file_id: str, save_path: str) -> str:
 
 
 def upload_new_revision(file_id: str, local_path: str, mime_type: str = "application/zip"):
-    """Push a local file to Drive as a new revision (resumable, so big zips aren't held in memory)."""
-
     def attempt():
         svc = get_service()
         media = MediaFileUpload(
             local_path,
             mimetype=mime_type,
             resumable=True,
-            chunksize=8 * 1024 * 1024,  # must be a multiple of 256 KB
+            chunksize=8 * 1024 * 1024,
         )
         request = svc.files().update(fileId=file_id, media_body=media)
         response = None
@@ -236,14 +234,9 @@ def upload_new_revision(file_id: str, local_path: str, mime_type: str = "applica
 
 
 def flatten_folder(root_dir: str) -> None:
-    """
-    Move every file from nested folders up to root_dir, then delete the
-    leftover folders. Also removes macOS junk (__MACOSX/, ._files, .DS_Store)
-    so it never shows up as broken images.
-    """
+    """Move nested files to the top level and remove macOS junk."""
     shutil.rmtree(os.path.join(root_dir, "__MACOSX"), ignore_errors=True)
 
-    # list(...) takes a snapshot first, so moving files while looping is safe
     for root, _, files in list(os.walk(root_dir)):
         for name in files:
             src = os.path.join(root, name)
@@ -253,7 +246,7 @@ def flatten_folder(root_dir: str) -> None:
                 continue
 
             if root == root_dir:
-                continue  # already at the top level
+                continue
 
             dest = os.path.join(root_dir, name)
             if os.path.exists(dest):
@@ -268,16 +261,12 @@ def flatten_folder(root_dir: str) -> None:
 
 
 def ensure_extracted(zip_file_id: str, force_refresh: bool = False) -> str:
-    """
-    Make sure this zip's contents are extracted on disk, and return the folder path.
-    Skips re-downloading if already extracted; pass force_refresh=True to pull fresh.
-
-    Extraction happens in a temporary folder that is swapped in only when complete,
-    so a failed/partial extraction never gets mistaken for a finished cache.
-    """
+    """Make sure the zip is extracted on disk; return the folder path."""
     folder = os.path.join(EXTRACT_DIR, zip_file_id)
     if os.path.isdir(folder) and not force_refresh:
-            return folder
+        return folder
+
+    password = password_for(zip_file_id)
 
     with lock_for(zip_file_id):
         if os.path.isdir(folder) and not force_refresh:
@@ -288,23 +277,22 @@ def ensure_extracted(zip_file_id: str, force_refresh: bool = False) -> str:
         old_dir = folder + ".old"
         try:
             download_to_disk(zip_file_id, temp_zip_path)
-            zip_md5 = md5_of_file(temp_zip_path)  # hash of exactly what we downloaded
+            zip_md5 = md5_of_file(temp_zip_path)
 
             shutil.rmtree(tmp_dir, ignore_errors=True)
             with pyzipper.AESZipFile(temp_zip_path) as z:
-                z.setpassword(ZIP_PASSWORD)
+                z.setpassword(password)
                 z.extractall(tmp_dir)
 
-            flatten_folder(tmp_dir)  # pull files out of any folder inside the zip
+            flatten_folder(tmp_dir)
 
-            # Swap the finished folder in.
             shutil.rmtree(old_dir, ignore_errors=True)
             if os.path.isdir(folder):
                 os.replace(folder, old_dir)
             os.replace(tmp_dir, folder)
             shutil.rmtree(old_dir, ignore_errors=True)
 
-            write_local_md5(zip_file_id, zip_md5)  # stamp the cache version LAST
+            write_local_md5(zip_file_id, zip_md5)  # stamp LAST
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             if os.path.exists(temp_zip_path):
@@ -314,14 +302,9 @@ def ensure_extracted(zip_file_id: str, force_refresh: bool = False) -> str:
 
 
 def ensure_fresh(zip_file_id: str) -> str:
-    """
-    Return the extracted folder, guaranteed to match what's on Drive right now.
-    Costs one tiny metadata call. Only downloads if the zip changed elsewhere
-    (or there's no cache yet).
-    """
+    """Return the extracted folder, guaranteed to match Drive right now."""
     folder = os.path.join(EXTRACT_DIR, zip_file_id)
 
-    
     with lock_for(zip_file_id):
         if os.path.isdir(folder):
             local_md5 = read_local_md5(zip_file_id)
@@ -332,19 +315,17 @@ def ensure_fresh(zip_file_id: str) -> str:
         return ensure_extracted(zip_file_id, force_refresh=True)
 
 
-def build_zip_from_folder(folder: str, out_path: str, extra_path: str, extra_arcname: str) -> None:
-    """
-    Build a new AES-encrypted zip from everything in `folder` plus the new file.
-    ZIP_STORED (no compression) because photos/videos are already compressed,
-    so deflating them just burns CPU for ~0% size savings.
-    """
+def build_zip_from_folder(
+    folder: str, out_path: str, extra_path: str, extra_arcname: str, password: bytes
+) -> None:
+    """Build a new AES-encrypted zip from the folder plus the new file (no compression)."""
     with pyzipper.AESZipFile(
         out_path,
         "w",
         compression=pyzipper.ZIP_STORED,
         encryption=pyzipper.WZ_AES,
     ) as z:
-        z.setpassword(ZIP_PASSWORD)
+        z.setpassword(password)
         for name in sorted(os.listdir(folder)):
             p = os.path.join(folder, name)
             if os.path.isfile(p):
@@ -353,10 +334,6 @@ def build_zip_from_folder(folder: str, out_path: str, extra_path: str, extra_arc
 
 
 def find_duplicate(folder: str, new_file_path: str) -> str | None:
-    """
-    Compare the new file's hash against every image/video in the extracted folder.
-    Returns the matching filename if a duplicate is found, else None.
-    """
     new_hash = sha256_of_file(new_file_path)
 
     for name in os.listdir(folder):
@@ -371,23 +348,13 @@ def find_duplicate(folder: str, new_file_path: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# GET /gallery/{zip_file_id} — list the images/videos currently inside the zip
-# (?refresh=true forces a fresh download from Drive)
+# GET /gallery/{zip_file_id}
 # ---------------------------------------------------------------------------
 @app.get("/gallery/{zip_file_id}")
 def gallery(zip_file_id: str, refresh: bool = False):
-    global ZIP_PASSWORD
-    svc = get_service()
-    file_metadata = svc.files().get(fileId=zip_file_id,fields='name').execute()
-    file_name = file_metadata.get('name')
-    if file_name == "Secure Key.zip":
-        _zip_password = os.environ.get("HUBBY_PASSWORD")
-        ZIP_PASSWORD = _zip_password.encode()  # pyzipper needs bytes
-    else:
-        _zip_password = os.environ.get("WIFEY_PASSWORD")
-        ZIP_PASSWORD = _zip_password.encode()  # pyzipper needs bytes
-
     validate_id(zip_file_id)
+    password_for(zip_file_id)  # rejects unknown ids before touching Drive
+
     try:
         folder = ensure_extracted(zip_file_id, force_refresh=refresh)
     except HttpError as error:
@@ -402,14 +369,12 @@ def gallery(zip_file_id: str, refresh: bool = False):
             items.append({"filename": name, "type": "image"})
         elif ext in VIDEO_EXTENSIONS:
             items.append({"filename": name, "type": "video"})
-        # anything else inside the zip is silently skipped
 
     return {"zip_file_id": zip_file_id, "items": items}
 
 
 # ---------------------------------------------------------------------------
-# GET /resource/{zip_file_id}/{filename} — serve ONE extracted file.
-# FileResponse streams from disk and supports Range requests (video seeking).
+# GET /resource/{zip_file_id}/{filename}
 # ---------------------------------------------------------------------------
 @app.get("/resource/{zip_file_id}/{filename}")
 def get_resource(zip_file_id: str, filename: str):
@@ -418,7 +383,6 @@ def get_resource(zip_file_id: str, filename: str):
     folder = os.path.abspath(os.path.join(EXTRACT_DIR, zip_file_id))
     path = os.path.abspath(os.path.join(folder, filename))
 
-    # prevent filename="../../creds.json" etc.
     if not path.startswith(folder + os.sep):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
@@ -435,9 +399,7 @@ def get_resource(zip_file_id: str, filename: str):
 
 
 # ---------------------------------------------------------------------------
-# GET /download — fetch a single file from Drive and return it to the client.
-# ?mode=inline   -> renders in-browser
-# ?mode=download -> forces a Save As download
+# GET /download
 # ---------------------------------------------------------------------------
 @app.get("/download")
 def download(file_id: str, mode: str = "inline"):
@@ -471,16 +433,7 @@ def download(file_id: str, mode: str = "inline"):
 
 
 # ---------------------------------------------------------------------------
-# POST /updateMemories — add the uploaded file to the extracted folder,
-# build a new zip from that folder, and push it to Drive as a new revision.
-#
-# Normal case = ZERO zip downloads: one tiny checksum call confirms our
-# extracted folder still matches Drive. Only if the zip changed elsewhere do
-# we pull a fresh copy first (so we never overwrite newer changes).
-#
-# Plain `def` (not `async def`) so blocking Drive calls run in FastAPI's
-# threadpool instead of freezing the event loop. The per-zip lock stops two
-# simultaneous uploads from overwriting each other.
+# POST /updateMemories
 # ---------------------------------------------------------------------------
 @app.post("/updateMemories")
 def update_memories(
@@ -488,26 +441,24 @@ def update_memories(
     new_file: UploadFile = File(...),
 ):
     validate_id(zip_file_id)
+    password = password_for(zip_file_id)
 
-    # Strip any directory parts from the client-supplied filename.
     safe_name = os.path.basename(new_file.filename or "") or "upload"
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in IMAGE_EXTENSIONS and ext not in VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only photos and videos can be added.")
 
-    # Unique local filenames so two requests at once never collide.
     job_id = uuid.uuid4().hex
     local_zip_path = os.path.join(TEMP_DIR, f"{job_id}.zip")
     local_new_file_path = os.path.join(TEMP_DIR, f"{job_id}_upload")
 
     try:
-        # 1. Save the uploaded file to disk temporarily (streamed, not read into memory)
         with open(local_new_file_path, "wb") as f:
             shutil.copyfileobj(new_file.file, f)
 
         with lock_for(zip_file_id):
-            # 2. Make sure the extracted folder matches Drive (checksum check, no download
-            #    unless the zip changed somewhere else).
             folder = ensure_fresh(zip_file_id)
 
-            # 3. Duplicate check by content, not name: stop before touching Drive.
             duplicate_name = find_duplicate(folder, local_new_file_path)
             if duplicate_name:
                 return {
@@ -516,34 +467,26 @@ def update_memories(
                     "zip_file_id": zip_file_id,
                 }
 
-            # 4. Pick a filename that isn't taken (same name, different content).
             arcname = safe_name
             if os.path.exists(os.path.join(folder, arcname)):
                 stem, ext = os.path.splitext(safe_name)
                 arcname = f"{stem}_{uuid.uuid4().hex[:6]}{ext}"
 
-            # 5. Build the new encrypted zip from the folder + the new file.
-            build_zip_from_folder(folder, local_zip_path, local_new_file_path, arcname)
+            build_zip_from_folder(folder, local_zip_path, local_new_file_path, arcname, password)
 
-            # 6. Push it to Drive as a new revision. If this fails, the folder is
-            #    still untouched, so cache and Drive stay consistent.
             upload_new_revision(zip_file_id, local_zip_path)
 
-            # 7. Upload succeeded: put the file in the folder, THEN stamp the new
-            #    checksum. (Stamp last: if we crash before it, the next request
-            #    just sees a mismatch and safely refreshes.)
+            # Upload succeeded: add the file locally, then stamp the new checksum.
             shutil.move(local_new_file_path, os.path.join(folder, arcname))
             write_local_md5(zip_file_id, md5_of_file(local_zip_path))
+
+        return {"status": "ok", "filename": arcname, "zip_file_id": zip_file_id}
 
     except HttpError as error:
         raise drive_http_error(error)
     except RETRYABLE:
         raise network_http_error()
-
     finally:
-        # 8. Clean up temp files no matter what happened
-        for path in (local_zip_path, local_new_file_path):
-            if os.path.exists(path):
-                os.remove(path)
-
-    return {"status": "updated", "zip_file_id": zip_file_id, "added": arcname}
+        for p in (local_zip_path, local_new_file_path):
+            if os.path.exists(p):
+                os.remove(p)

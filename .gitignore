@@ -1,3 +1,7 @@
 .venv
 .env
 creds.json
+__pycache__/
+extracted/
+meta/
+temp/
