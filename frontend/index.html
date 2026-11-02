@@ -10,106 +10,59 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
   :root {
-    --paper: #f7efe2;
-    --paper-deep: #efe3d0;
-    --ink: #2c2118;
-    --ink-soft: #6b5a49;
-    --rose: #b5626f;
-    --rose-deep: #7a2f3d;
-    --gold: #b08a3e;
-    --tape: rgba(181, 98, 111, 0.35);
-    --tape-gold: rgba(176, 138, 62, 0.35);
-    --shadow: rgba(44, 33, 24, 0.18);
+    --paper: #f7efe2; --paper-deep: #efe3d0; --ink: #2c2118; --ink-soft: #6b5a49;
+    --rose: #b5626f; --rose-deep: #7a2f3d; --gold: #b08a3e;
+    --tape-gold: rgba(176,138,62,0.35); --shadow: rgba(44,33,24,0.18);
   }
-
   body {
-    margin: 0;
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at 1px 1px, rgba(44,33,24,0.05) 1px, transparent 1px) 0 0/22px 22px,
-      var(--paper);
-    color: var(--ink);
-    font-family: 'Inter', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    overflow-y: scroll;
+    margin: 0; min-height: 100vh;
+    background: radial-gradient(circle at 1px 1px, rgba(44,33,24,0.05) 1px, transparent 1px) 0 0/22px 22px, var(--paper);
+    color: var(--ink); font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; overflow-y: scroll;
   }
   .display { font-family: 'Fraunces', serif; }
-
-  .app-wrap { max-width: 920px; margin: 0 auto; padding: 40px 18px 70px; text-align: center;}
+  .app-wrap { max-width: 920px; margin: 0 auto; padding: 40px 18px 70px; text-align: center; }
   .app-header h1 { font-size: 2.2rem; font-style: italic; font-weight: 500; color: var(--rose-deep); margin: 0; }
   .app-header p { color: var(--ink-soft); font-size: 0.92rem; margin: 4px 0 28px; }
 
-  /* Bootstrap nav-tabs re-themed */
   .nav-tabs { border-bottom: 2px solid rgba(44,33,24,0.15); gap: 24px; justify-content: center; }
   .nav-tabs .nav-link {
-    font-family: 'Fraunces', serif;
-    font-style: italic;
-    font-size: 1.2rem;
-    color: var(--ink-soft);
-    border: none;
-    border-bottom: 3px solid transparent;
-    background: transparent;
-    padding: 10px 6px;
+    font-family: 'Fraunces', serif; font-style: italic; font-size: 1.2rem; color: var(--ink-soft);
+    border: none; border-bottom: 3px solid transparent; background: transparent; padding: 10px 6px;
   }
-  .nav-tabs .nav-link.active {
-    color: var(--rose-deep);
-    border-bottom-color: var(--rose-deep);
-    background: transparent;
-  }
+  .nav-tabs .nav-link.active { color: var(--rose-deep); border-bottom-color: var(--rose-deep); background: transparent; }
   .tab-content { padding-top: 26px; }
 
-  .panel {
-    background: var(--paper-deep);
-    border: 1px solid rgba(44,33,24,0.1);
-    border-radius: 4px;
-    padding: 22px;
-    margin-bottom: 24px;
-  }
+  .panel { background: var(--paper-deep); border: 1px solid rgba(44,33,24,0.1); border-radius: 4px; padding: 22px; margin-bottom: 24px; }
   .panel h2 { font-family: 'Fraunces', serif; font-weight: 500; font-size: 1.2rem; margin: 0 0 4px; text-align: center; }
   .panel .sub { color: var(--ink-soft); font-size: 0.84rem; margin: 0 0 16px; text-align: center; }
   .panel .row.g-2 { justify-content: center; }
   .panel label.form-label { text-align: center; width: 100%; }
 
   .file-drop {
-    border: 1.5px dashed rgba(44,33,24,0.3);
-    background: var(--paper);
-    border-radius: 3px;
-    padding: 12px;
-    font-size: 0.85rem;
-    color: var(--ink-soft);
-    cursor: pointer;
-    text-align: center;
+    border: 1.5px dashed rgba(44,33,24,0.3); background: var(--paper); border-radius: 3px;
+    padding: 12px; font-size: 0.85rem; color: var(--ink-soft); cursor: pointer; text-align: center;
+    word-break: break-word;
   }
   .file-drop.has-file { border-color: var(--rose); color: var(--ink); }
   [id^="status-"] { font-size: 0.82rem; margin-top: 10px; color: var(--ink-soft); min-height: 1.2em; text-align: center; }
   .row.row-cols-2 { justify-content: center; }
 
+  .grid { transition: filter 0.2s ease; }
+  .grid.locked { filter: blur(5px); cursor: pointer; }
+
   .media-card {
-    position: relative;
-    background: var(--paper);
-    padding: 10px 10px 12px;
-    box-shadow: 0 6px 16px var(--shadow);
-    cursor: pointer;
-    transition: transform 0.15s ease;
+    position: relative; background: var(--paper); padding: 10px;
+    box-shadow: 0 6px 16px var(--shadow); cursor: pointer; transition: transform 0.15s ease;
   }
   .row > div:nth-child(3n+1) .media-card { transform: rotate(-2deg); }
   .row > div:nth-child(3n+2) .media-card { transform: rotate(1.5deg); }
-  .row > div:nth-child(3n) .media-card   { transform: rotate(-1deg); }
+  .row > div:nth-child(3n)   .media-card { transform: rotate(-1deg); }
   .media-card:hover { transform: rotate(0deg) scale(1.03); z-index: 2; }
   .media-card::before {
-    content: ''; position: absolute; top: -10px; left: 50%;
-    transform: translateX(-50%) rotate(-4deg);
+    content: ''; position: absolute; top: -10px; left: 50%; transform: translateX(-50%) rotate(-4deg);
     width: 46px; height: 20px; background: var(--tape-gold);
   }
   .media-card img, .media-card video { width: 100%; height: 130px; object-fit: cover; display: block; background: #ddd; }
-  .media-card .cap { font-size: 0.78rem; margin-top: 8px; color: var(--ink); line-height: 1.3; word-break: break-word; }
-  .media-card .del {
-    position: absolute; top: 4px; right: 4px;
-    background: rgba(44,33,24,0.55); color: #fff; border: none; border-radius: 50%;
-    width: 22px; height: 22px; font-size: 12px; line-height: 1; cursor: pointer;
-    opacity: 0; transition: opacity 0.15s ease;
-  }
-  .media-card:hover .del { opacity: 1; }
   .empty-note { color: var(--ink-soft); font-size: 0.88rem; text-align: center; padding: 24px 10px; }
 
   .lightbox {
@@ -117,113 +70,41 @@
     z-index: 1050; align-items: center; justify-content: center; padding: 24px;
   }
   .lightbox.open { display: flex; }
-  .lightbox-inner {
-    background: var(--paper); max-width: 640px; width: 100%; max-height: 90vh; overflow: auto;
-    border-radius: 4px; padding: 18px; position: relative;
-  }
-  .lightbox-inner img, .lightbox-inner video { width: 100%; max-height: 60vh; object-fit: contain; background: #111; }
-  #lightbox-caption { text-align: center; }
+  .lightbox-inner { background: var(--paper); max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; border-radius: 4px; padding: 18px; position: relative; }
+  .lightbox-inner img, .lightbox-inner video { width: 100%; max-height: 70vh; object-fit: contain; background: #111; display: block; }
   .lightbox-close {
-    position: absolute; top: 10px; right: 10px; background: var(--ink); color: var(--paper);
+    position: absolute; top: 10px; right: 10px; z-index: 2; background: var(--ink); color: var(--paper);
     border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 14px;
   }
   .foot { text-align: center; color: var(--ink-soft); font-size: 0.78rem; margin-top: 10px; }
   .btn-rose { background: var(--rose-deep); border-color: var(--rose-deep); color: var(--paper); font-weight: 600; }
   .btn-rose:hover { background: var(--rose); border-color: var(--rose); color: var(--paper); }
 
-  #passwordModalContent {
-    background: var(--paper-deep);
-    border: none;
-    border-radius: 4px;
-    padding: 26px 24px;
-  }
+  #passwordModalContent { background: var(--paper-deep); border: none; border-radius: 4px; padding: 26px 24px; }
   #passwordModalContent h5 { font-family: 'Fraunces', serif; font-style: italic; font-weight: 500; color: var(--rose-deep); text-align: center; }
   #passwordModalContent p.sub { text-align: center; color: var(--ink-soft); font-size: 0.85rem; }
   #passwordModalContent .form-control { background: var(--paper); border-color: rgba(44,33,24,0.2); }
-  #passwordModalContent .hint-box { background: rgba(176,138,62,0.12); border: 1px dashed var(--gold); padding: 10px 14px; border-radius: 3px; font-size: 0.85rem; margin-top: 10px; text-align: center; }
-  .link-muted { color: var(--ink-soft); text-decoration: underline; font-size: 0.82rem; background: none; border: none; }
-  .center{
-  display: flex;
-} 
-.back {
-    position: fixed;
-    padding: 0;
-    margin: 0;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: white;
-    animation-name: backdiv;
-    animation-duration: 1s; 
-    animation-iteration-count: infinite;
-  }
 
+  /* Heart loader */
+  .back { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1; animation: backdiv 1s infinite; }
   .heart {
-    position: absolute;
-    margin: auto;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    background-color: pink;
-    height: 50px;
-    width: 50px;
-    transform: rotate(-45deg);
-    animation-name: beat;
-    animation-duration: 1s;
-    animation-iteration-count: infinite;
+    position: fixed; margin: auto; top: 0; right: 0; bottom: 0; left: 0; z-index: 2;
+    background-color: pink; height: 50px; width: 50px; transform: rotate(-45deg); animation: beat 1s infinite;
   }
-  .heart:after {
-    background-color: pink;
-    content: "";
-    border-radius: 50%;
-    position: absolute;
-    width: 50px;
-    height: 50px;
-    top: 0px;
-    left: 25px;
-  }
-  .heart:before {
-    background-color: pink;
-    content: "";
-    border-radius: 50%;
-    position: absolute;
-    width: 50px;
-    height: 50px;
-    top: -25px;
-    left: 0px;
-  }
-
-  @keyframes backdiv {
-    50% {
-      background: #ffe6f2;
-    }
-  }
-
-  @keyframes beat {
-    0% {
-      transform: scale(1) rotate(-45deg);
-    }
-    50% {
-      transform: scale(0.6) rotate(-45deg);
-    }
-  }
-  .loader{
-    display:block;
-    z-index: 1;
-  }
-  /* .app-wrap{
-    display: none;
-  } */
+  .heart:after, .heart:before { background-color: pink; content: ""; border-radius: 50%; position: absolute; width: 50px; height: 50px; }
+  .heart:after { top: 0; left: 25px; }
+  .heart:before { top: -25px; left: 0; }
+  @keyframes backdiv { 50% { background: #ffe6f2; } }
+  @keyframes beat { 0% { transform: scale(1) rotate(-45deg); } 50% { transform: scale(0.6) rotate(-45deg); } }
 </style>
 </head>
 <body>
 <div class="loader">
-<div class="back"></div>
-<div class="heart"></div>
+  <div class="back"></div>
+  <div class="heart"></div>
 </div>
-<div class="app-wrap">
+
+<div class="app-wrap" style="display:none;">
   <div class="app-header">
     <h1 class="display">Our Love Archive</h1>
     <p>Each And Every Lovely Moment Captured</p>
@@ -246,63 +127,44 @@
   <p class="foot">Stored privately for the two of you. Not a substitute for a real backup — treasure these, but keep copies too.</p>
 </div>
 
-<!-- ===================== PASSWORD MODAL ===================== -->
 <div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content" id="passwordModalContent">
-      <!-- filled dynamically -->
-    </div>
+    <div class="modal-content" id="passwordModalContent"></div>
   </div>
 </div>
 
-<!-- ===================== LIGHTBOX ===================== -->
 <div class="lightbox" id="lightbox">
   <div class="lightbox-inner">
     <button class="lightbox-close" id="lightbox-close">✕</button>
     <div id="lightbox-media"></div>
-    <div class="mt-3" id="lightbox-caption"></div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-(function() {
-  const APP = document.querySelector(".app-wrap");
-  const LOADING = document.querySelector(".loader");
+(function () {
+  const APP = document.querySelector('.app-wrap');
+  const LOADING = document.querySelector('.loader');
 
   const NAMES = { A: 'Hubby', B: 'Wifey' };
 
-  // 👇 Change these to whatever passwords you want
-  const PASSWORDS = { A: '5aec3a4fb7e3f6e8379aad0a242ea2fc1462a0af25b7f4f8a61c4628944d9116', B: '5c342e7a2496ddba7c8c33b6f52658f12118aec09ffd0a9ca79bc59b88236548' };
+  // SHA-256 hashes of the two passwords
+  const PASSWORDS = {
+    A: '5aec3a4fb7e3f6e8379aad0a242ea2fc1462a0af25b7f4f8a61c4628944d9116',
+    B: '5c342e7a2496ddba7c8c33b6f52658f12118aec09ffd0a9ca79bc59b88236548'
+  };
 
-  const ZIPIDS = { A: '1T9LFvSC-iKlFZVHI1zEnQyRJfrsipauN', B: '11Xh4U2T2u9b7ItpIllDtR58QFkZ1eyOp'}
-  
+  const ZIPIDS = { A: '1T9LFvSC-iKlFZVHI1zEnQyRJfrsipauN', B: '11Xh4U2T2u9b7ItpIllDtR58QFkZ1eyOp' };
 
-  // 👇 Put your own backend endpoint here — it should accept a multipart/form-data
-  //    POST with fields: file, caption, owner
-  const UPLOAD_ENDPOINT = 'http://127.0.0.1:8080/updateMemories';
-  const HGALLERY_ENDPOINT = 'http://127.0.0.1:8080/gallery'
-  const RESOURCE_ENDPOINT = 'http://127.0.0.1:8080/resource'
+  const API = 'http://127.0.0.1:8080';
+  const UPLOAD_ENDPOINT = API + '/updateMemories';
+  const GALLERY_ENDPOINT = API + '/gallery';
+  const RESOURCE_ENDPOINT = API + '/resource';
 
-  
-  // Gallery here is session-only (in-memory) — refresh the page and it's gone.
-  // Your backend is the real source of truth once it's wired up; see loadGalleryFromBackend() below.
-  let mediaIndexes = { A: [], B: [] }; // each: [{id, type, caption, objectUrl}]
+  const mediaIndexes = { A: [], B: [] };
   const pending = { A: { file: null, type: null }, B: { file: null, type: null } };
+  const unlocked = { A: false, B: false };
   let pwModal = null;
-  
-  // remove: let privacyBlur = 5 and the tabs.forEach(...) block
-const unlocked = { A: false, B: false };
-
-document.querySelectorAll(".tab").forEach(btn => {
-  btn.addEventListener('shown.bs.tab', () => {
-    unlocked.A = false;
-    unlocked.B = false;
-    renderGrid('A');
-    renderGrid('B');
-  });
-});
-  
 
   function escapeHTML(str) {
     const d = document.createElement('div');
@@ -310,93 +172,99 @@ document.querySelectorAll(".tab").forEach(btn => {
     return d.innerHTML;
   }
 
+  function mediaUrl(item) {
+    return `${RESOURCE_ENDPOINT}/${encodeURIComponent(item.zip_file_id)}/${encodeURIComponent(item.filename)}`;
+  }
 
-  function init() {
+  // Re-lock both galleries whenever the tab changes.
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('shown.bs.tab', () => {
+      unlocked.A = false;
+      unlocked.B = false;
+      renderGrid('A');
+      renderGrid('B');
+    });
+  });
+
+  async function init() {
     pwModal = new bootstrap.Modal(document.getElementById('passwordModal'));
     renderPane('A');
     renderPane('B');
     setupLightboxHandlers();
-    loadGalleryFromBackend('A');
-    loadGalleryFromBackend('B');
-    // If you want the gallery to load existing uploads from your backend on page load,
-    // implement loadGalleryFromBackend('A') / loadGalleryFromBackend('B') and call them here.
+
+    await Promise.all([loadGallery('A'), loadGallery('B')]);
+    LOADING.style.display = 'none';
+    APP.style.display = 'block';
   }
 
-  async function loadGalleryFromBackend(owner) {
-  APP.style.display = "none";          // hide BEFORE fetching
-  LOADING.style.display = "block";
-  try {
-    const res = await fetch(`${HGALLERY_ENDPOINT}/${ZIPIDS[owner]}`);
-    if (!res.ok) throw new Error("Gallery failed: " + res.status);
-    const data = await res.json();
-    mediaIndexes[owner] = data.items.map((item, index) => ({
-      ...item,
-      zip_file_id: data.zip_file_id,
-      id: index,
-    }));
-  } catch (e) {
-    console.error(e);
-  } finally {
-    // runs even if the fetch fails, so the loader can't get stuck forever
-    LOADING.style.display = "none";
-    APP.style.display = "block";
+  async function loadGallery(owner) {
+    try {
+      const res = await fetch(`${GALLERY_ENDPOINT}/${ZIPIDS[owner]}`);
+      if (!res.ok) throw new Error('Gallery failed: ' + res.status);
+      const data = await res.json();
+      mediaIndexes[owner] = data.items.map((item, index) => ({
+        ...item,
+        zip_file_id: data.zip_file_id,
+        id: index
+      }));
+    } catch (e) {
+      console.error(e);
+    }
     renderGrid(owner);
   }
-}
 
-async function getHash(message) {
-  const bytes = new TextEncoder().encode(message);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)]
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function requestPasswordThenProcess(owner, mode = 'upload') {
-  const isUpload = mode === 'upload';
-  const content = document.getElementById('passwordModalContent');
-
-  content.innerHTML = `
-    <h5>Password please</h5>
-    <p class="sub">Confirm the password to ${isUpload ? 'add this to' : 'view this from'} ${escapeHTML(NAMES[owner])}'s gallery.</p>
-    <input type="password" class="form-control" id="modal-check-pass" placeholder="Enter password">
-    <button class="btn btn-rose w-100 mt-3" id="modal-check-btn">${isUpload ? 'Confirm & add' : 'Confirm'}</button>
-    <div class="text-danger text-center mt-2 small" id="modal-error"></div>
-  `;
-
-  const input = document.getElementById('modal-check-pass');
-  const err = document.getElementById('modal-error');
-
-  async function checkPass() {
-    const hash = await getHash(input.value);
-    if (hash !== PASSWORDS[owner]) {
-      err.textContent = "That doesn't match — try again.";
-      return;
-    }
-    pwModal.hide();
-    if (isUpload) {
-      performUpload(owner);
-    } else {
-      unlocked[owner] = true;
-      renderGrid(owner);
-    }
+  async function getHash(message) {
+    const bytes = new TextEncoder().encode(message);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  document.getElementById('modal-check-btn').addEventListener('click', checkPass);
-  input.addEventListener('keydown', e => e.key === 'Enter' && checkPass());
+  // ---------------- PASSWORD MODAL ----------------
+  function requestPasswordThenProcess(owner, mode = 'upload') {
+    const isUpload = mode === 'upload';
+    const content = document.getElementById('passwordModalContent');
 
-  const el = document.getElementById('passwordModal');
-if (el.classList.contains('show')) {
-  el.addEventListener('hidden.bs.modal', () => pwModal.show(), { once: true });
-} else {
-  pwModal.show();
-}
-}
+    content.innerHTML = `
+      <h5>Password please</h5>
+      <p class="sub">Confirm the password to ${isUpload ? 'add this to' : 'view'} ${escapeHTML(NAMES[owner])}'s gallery.</p>
+      <input type="password" class="form-control" id="modal-check-pass" placeholder="Enter password">
+      <button class="btn btn-rose w-100 mt-3" id="modal-check-btn">${isUpload ? 'Confirm & add' : 'Confirm'}</button>
+      <div class="text-danger text-center mt-2 small" id="modal-error"></div>
+    `;
 
-  // ---------------- RENDER A PANE (upload + gallery for one person) ----------------
+    const input = document.getElementById('modal-check-pass');
+    const err = document.getElementById('modal-error');
+
+    async function checkPass() {
+      const hash = await getHash(input.value);
+      if (hash !== PASSWORDS[owner]) {
+        err.textContent = "That doesn't match — try again.";
+        return;
+      }
+      pwModal.hide();
+      if (isUpload) {
+        performUpload(owner);
+      } else {
+        unlocked[owner] = true;
+        renderGrid(owner);
+      }
+    }
+
+    document.getElementById('modal-check-btn').addEventListener('click', checkPass);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') checkPass(); });
+
+    const el = document.getElementById('passwordModal');
+    if (el.classList.contains('show')) {
+      el.addEventListener('hidden.bs.modal', () => pwModal.show(), { once: true });
+    } else {
+      pwModal.show();
+    }
+    el.addEventListener('shown.bs.modal', () => input.focus(), { once: true });
+  }
+
+  // ---------------- PANE ----------------
   function renderPane(owner) {
     const pane = document.getElementById('pane-' + owner);
-    const name = NAMES[owner];
     pane.innerHTML = `
       <div class="panel">
         <h2>Add something Beautiful</h2>
@@ -415,15 +283,23 @@ if (el.classList.contains('show')) {
       </div>
 
       <div class="panel">
-        <h2>${escapeHTML(name)}'s gallery</h2>
-        <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 g-3" id="grid-${owner}"></div>
+        <h2>${escapeHTML(NAMES[owner])}'s gallery</h2>
+        <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 g-3 grid locked" id="grid-${owner}"></div>
       </div>
     `;
 
     setupUploadHandlers(owner);
-    document.getElementById('grid-' + owner).addEventListener('click', () => {
-    if (!unlocked[owner]) requestPasswordThenProcess(owner, 'view');
+
+    // One delegated listener per grid: locked -> ask for password, unlocked -> open the card.
+    document.getElementById('grid-' + owner).addEventListener('click', e => {
+      if (!unlocked[owner]) {
+        requestPasswordThenProcess(owner, 'view');
+        return;
+      }
+      const card = e.target.closest('.media-card');
+      if (card) openLightbox(owner, card.dataset.id);
     });
+
     renderGrid(owner);
   }
 
@@ -431,17 +307,21 @@ if (el.classList.contains('show')) {
   function setupUploadHandlers(owner) {
     const fileInput = document.getElementById('file-' + owner);
     const dropLabel = document.getElementById('drop-' + owner);
+    const status = document.getElementById('status-' + owner);
+
     dropLabel.addEventListener('click', () => fileInput.click());
 
     fileInput.addEventListener('change', () => {
       const file = fileInput.files[0];
-      const status = document.getElementById('status-' + owner);
       status.textContent = '';
       if (!file) return;
 
       const isImage = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
-      if (!isImage && !isVideo) { status.textContent = 'Please choose an image or video file.'; return; }
+      if (!isImage && !isVideo) {
+        status.textContent = 'Please choose an image or video file.';
+        return;
+      }
 
       pending[owner].file = file;
       pending[owner].type = isImage ? 'image' : 'video';
@@ -450,53 +330,39 @@ if (el.classList.contains('show')) {
     });
 
     document.getElementById('upload-btn-' + owner).addEventListener('click', () => {
-      const status = document.getElementById('status-' + owner);
-      const p = pending[owner];
-      if (!p.file) { status.textContent = 'Choose a file first.'; return; }
-      requestPasswordThenProcess(owner);
+      if (!pending[owner].file) { status.textContent = 'Choose a file first.'; return; }
+      requestPasswordThenProcess(owner, 'upload');
     });
   }
 
   async function performUpload(owner) {
     const status = document.getElementById('status-' + owner);
     const p = pending[owner];
-    const id = 'm' + Date.now() + Math.random().toString(36).slice(2, 8);
-
     status.textContent = 'Uploading…';
 
-    // ---- send the actual file to YOUR backend ----
     try {
       const formData = new FormData();
-      formData.append('zip_file_id','1q9L9NuPOLGs30o0OtPYTkqVr3JYmtHk0')
+      formData.append('zip_file_id', ZIPIDS[owner]);
       formData.append('new_file', p.file);
 
-      const res = await fetch(UPLOAD_ENDPOINT, {
-        method: 'POST',
-        body: formData
-      });
+      const res = await fetch(UPLOAD_ENDPOINT, { method: 'POST', body: formData });
+      const data = await res.json().catch(() => ({}));
 
-      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Upload failed with status ' + res.status);
 
-      if (!res.ok) throw new Error('Upload failed with status ' + res.status);
-      if(data.status === 'duplicate'){
+      if (data.status === 'duplicate') {
         status.textContent = data.message;
-        return
+        return;
       }
 
       status.textContent = 'Uploaded! 🤍';
+      fileInputReset(owner);
+      pending[owner] = { file: null, type: null };
+      await loadGallery(owner); // pull the real list so the new item has a working URL
     } catch (e) {
       console.error(e);
-      status.textContent = 'Backend upload failed (endpoint not set up yet?). Showing it locally for now.';
+      status.textContent = 'Upload failed: ' + e.message;
     }
-
-    // ---- local preview in the gallery for this session ----
-    const objectUrl = URL.createObjectURL(p.file);
-    mediaIndexes[owner].unshift({ id, type: p.type, objectUrl });
-
-    fileInputReset(owner);
-    pending[owner] = { file: null, type: null };
-
-    renderGrid(owner);
   }
 
   function fileInputReset(owner) {
@@ -506,56 +372,36 @@ if (el.classList.contains('show')) {
     dropLabel.classList.remove('has-file');
   }
 
-  // ---------------- GALLERY GRID ----------------
+  // ---------------- GRID ----------------
   function renderGrid(owner) {
-  const grid = document.getElementById('grid-' + owner);
-  grid.style.filter = unlocked[owner] ? 'none' : 'blur(5px)';
+    const grid = document.getElementById('grid-' + owner);
+    grid.classList.toggle('locked', !unlocked[owner]);
 
-  const items = mediaIndexes[owner];
+    const items = mediaIndexes[owner];
 
-  if (items.length === 0) {
-    grid.innerHTML = `<div class="col-12"><div class="empty-note">Nothing here yet — the first memory you add will show up here.</div></div>`;
-    return;
-  }
+    if (items.length === 0) {
+      grid.innerHTML = `<div class="col-12"><div class="empty-note">Nothing here yet — the first memory you add will show up here.</div></div>`;
+      return;
+    }
 
-  grid.innerHTML = items.map(item => `
-    <div class="col">
-      <div class="media-card" data-owner="${owner}" data-id="${item.id}">
-        <button class="del" data-owner="${owner}" data-id="${item.id}" title="Remove">✕</button>
-        ${item.type === 'image'
-          ? `<img src="${RESOURCE_ENDPOINT}/${item.zip_file_id}/${item.filename}">`
-          : `<video src="${RESOURCE_ENDPOINT}/${item.zip_file_id}/${item.filename}" muted></video>`}
+    grid.innerHTML = items.map(item => `
+      <div class="col">
+        <div class="media-card" data-id="${item.id}">
+          ${item.type === 'image'
+            ? `<img src="${mediaUrl(item)}" alt="" loading="lazy">`
+            : `<video src="${mediaUrl(item)}" preload="metadata" muted></video>`}
+        </div>
       </div>
-    </div>
-  `).join('');
-
-  if (unlocked[owner]) {
-    grid.querySelectorAll('.media-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.classList.contains('del')) return;
-        openLightbox(card.dataset.owner, card.dataset.id);
-      });
-    });
-    grid.querySelectorAll('.del').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const o = btn.dataset.owner, id = btn.dataset.id;
-        if (!confirm('Remove this from the gallery?')) return;
-        const item = mediaIndexes[o].find(m => m.id == id);
-        if (item && item.objectUrl) URL.revokeObjectURL(item.objectUrl);
-        mediaIndexes[o] = mediaIndexes[o].filter(m => m.id != id);
-        renderGrid(o);
-      });
-    });
+    `).join('');
   }
-}
 
   // ---------------- LIGHTBOX ----------------
   function setupLightboxHandlers() {
     document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
-    document.getElementById('lightbox').addEventListener('click', (e) => {
+    document.getElementById('lightbox').addEventListener('click', e => {
       if (e.target.id === 'lightbox') closeLightbox();
     });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
   }
 
   function openLightbox(owner, id) {
@@ -563,15 +409,14 @@ if (el.classList.contains('show')) {
     if (!item) return;
 
     document.getElementById('lightbox-media').innerHTML = item.type === 'image'
-      ? `<img src="${RESOURCE_ENDPOINT+`/${item.zip_file_id+'/'+item.filename}`}" alt="">`
-      : `<video src="${RESOURCE_ENDPOINT+`/${item.zip_file_id+'/'+item.filename}`}" controls autoplay></video>`;
-    document.getElementById('lightbox-caption').textContent = item.caption || '';
+      ? `<img src="${mediaUrl(item)}" alt="">`
+      : `<video src="${mediaUrl(item)}" controls autoplay></video>`;
     document.getElementById('lightbox').classList.add('open');
   }
 
   function closeLightbox() {
     document.getElementById('lightbox').classList.remove('open');
-    document.getElementById('lightbox-media').innerHTML = '';
+    document.getElementById('lightbox-media').innerHTML = ''; // also stops any video
   }
 
   init();
