@@ -8,6 +8,8 @@ import shutil
 import hashlib
 import mimetypes
 import threading
+import base64
+import json
 
 import httplib2
 import pyzipper
@@ -35,7 +37,12 @@ try:
 except ImportError:
     pass
 
-os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", os.path.join(BASE_DIR, "creds.json"))
+#Server Json Reading Way Not To Be Confused with Local Development:
+base64_creds = os.environ.get("GCP_CREDS")
+if base64_creds:
+    json_creds_bytes = base64.b64decode(base64_creds)
+    creds_dict = json.loads(json_creds_bytes)
+    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", creds_dict)
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
