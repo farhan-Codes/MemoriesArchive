@@ -346,6 +346,13 @@ def find_duplicate(folder: str, new_file_path: str) -> str | None:
 
     return None
 
+# ---------------------------------------------------------------------------
+# GET /health
+# ---------------------------------------------------------------------------
+@app.get("/health")
+def getHealth():
+    return Response(content="success:True",status_code=200)
+
 
 # ---------------------------------------------------------------------------
 # GET /gallery/{zip_file_id}
