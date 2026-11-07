@@ -23,6 +23,8 @@ from google.auth.exceptions import TransportError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from typing import List
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +93,38 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm"}
 
 DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# ---------------------------------------------------------------------------
+# General helpers
+# ---------------------------------------------------------------------------
+def is_media(name:str) -> bool:
+    ext = os.path.splitext(name)[1].lower()
+    return ext in IMAGE_EXTENSIONS or ext in VIDEO_EXTENSIONS
+
+def build_zip(
+    folder: str,
+    out_path: str,
+    password: bytes,
+    exclude: set | frozenset = frozenset(),
+    extras: list | tuple = (),
+) -> None:
+    """Build an AES zip from `folder`, skipping `exclude` names and adding
+    `extras` as (local_path, arcname) pairs."""
+    with pyzipper.AESZipFile(
+        out_path,
+        "w",
+        compression=pyzipper.ZIP_STORED,
+        encryption=pyzipper.WZ_AES,
+    ) as z:
+        z.setpassword(password)
+        for name in sorted(os.listdir(folder)):
+            if name in exclude:
+                continue
+            p = os.path.join(folder, name)
+            if os.path.isfile(p):
+                z.write(p, arcname=name)
+        for path, arcname in extras:
+            z.write(path, arcname=arcname)
 
 
 # ---------------------------------------------------------------------------
@@ -497,3 +531,165 @@ def update_memories(
         for p in (local_zip_path, local_new_file_path):
             if os.path.exists(p):
                 os.remove(p)
+
+# ---------------------------------------------------------------------------
+# POST /updateMemoriesBatch
+# Form fields: zip_file_id, new_files (repeat the field once per file)
+# One Drive revision for the whole batch.
+# ---------------------------------------------------------------------------
+@app.post("/updateMemoriesBatch")
+def update_memories_batch(
+    zip_file_id: str = Form(...),
+    new_files: List[UploadFile] = File(...),
+):
+    validate_id(zip_file_id)
+    password = password_for(zip_file_id)
+
+    if not new_files:
+        raise HTTPException(status_code=400, detail="No files provided.")
+
+    job_id = uuid.uuid4().hex
+    local_zip_path = os.path.join(TEMP_DIR, f"{job_id}.zip")
+    temp_paths = [local_zip_path]
+    staged = []   # (safe_name, tmp_path)
+    results = []
+
+    try:
+        # Stage uploads to disk, rejecting non-media up front.
+        for i, upload in enumerate(new_files):
+            safe_name = os.path.basename(upload.filename or "") or f"upload_{i}"
+            if not is_media(safe_name):
+                results.append({
+                    "filename": safe_name,
+                    "status": "rejected",
+                    "message": "Only photos and videos can be added.",
+                })
+                continue
+            tmp = os.path.join(TEMP_DIR, f"{job_id}_{i}")
+            temp_paths.append(tmp)
+            with open(tmp, "wb") as f:
+                shutil.copyfileobj(upload.file, f)
+            staged.append((safe_name, tmp))
+
+        if not staged:
+            return {"status": "nothing_to_add", "zip_file_id": zip_file_id, "results": results}
+
+        with lock_for(zip_file_id):
+            folder = ensure_fresh(zip_file_id)
+
+            # Hash existing media once, not once per upload.
+            existing = {}  # sha256 -> filename
+            for name in os.listdir(folder):
+                p = os.path.join(folder, name)
+                if os.path.isfile(p) and is_media(name):
+                    existing[sha256_of_file(p)] = name
+
+            taken = set(os.listdir(folder))
+            to_add = []  # (tmp_path, arcname)
+
+            for safe_name, tmp in staged:
+                h = sha256_of_file(tmp)
+                if h in existing:  # also catches duplicates within the batch
+                    results.append({
+                        "filename": safe_name,
+                        "status": "duplicate",
+                        "message": f"Already exists as '{existing[h]}' — skipped.",
+                    })
+                    continue
+
+                arcname = safe_name
+                if arcname in taken:
+                    stem, ext = os.path.splitext(safe_name)
+                    arcname = f"{stem}_{uuid.uuid4().hex[:6]}{ext}"
+
+                taken.add(arcname)
+                existing[h] = arcname
+                to_add.append((tmp, arcname))
+                results.append({"filename": arcname, "original": safe_name, "status": "ok"})
+
+            if not to_add:
+                return {"status": "nothing_to_add", "zip_file_id": zip_file_id, "results": results}
+
+            build_zip(folder, local_zip_path, password, extras=to_add)
+            upload_new_revision(zip_file_id, local_zip_path)
+
+            # Upload succeeded: add files locally, then stamp the new checksum.
+            for tmp, arcname in to_add:
+                shutil.move(tmp, os.path.join(folder, arcname))
+            write_local_md5(zip_file_id, md5_of_file(local_zip_path))
+
+        return {
+            "status": "ok",
+            "zip_file_id": zip_file_id,
+            "added": len(to_add),
+            "results": results,
+        }
+
+    except HttpError as error:
+        raise drive_http_error(error)
+    except RETRYABLE:
+        raise network_http_error()
+    finally:
+        for p in temp_paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+# ---------------------------------------------------------------------------
+# POST /deleteMemories
+# JSON body: {"zip_file_id": "...", "filenames": ["a.jpg", "b.mp4"]}
+# Works for one file or many; one Drive revision either way.
+# ---------------------------------------------------------------------------
+class DeleteRequest(BaseModel):
+    zip_file_id: str
+    filenames: List[str]
+
+
+@app.post("/deleteMemories")
+def delete_memories(body: DeleteRequest):
+    zip_file_id = validate_id(body.zip_file_id)
+    password = password_for(zip_file_id)
+
+    if not body.filenames:
+        raise HTTPException(status_code=400, detail="No filenames provided.")
+
+    local_zip_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.zip")
+
+    try:
+        with lock_for(zip_file_id):
+            folder = ensure_fresh(zip_file_id)
+
+            to_delete = set()
+            not_found = []
+            for raw in body.filenames:
+                name = os.path.basename(raw)  # blocks path traversal
+                path = os.path.join(folder, name)
+                if name and is_media(name) and os.path.isfile(path):
+                    to_delete.add(name)
+                else:
+                    not_found.append(raw)
+
+            if not to_delete:
+                raise HTTPException(status_code=404, detail="None of those files were found.")
+
+            build_zip(folder, local_zip_path, password, exclude=to_delete)
+            upload_new_revision(zip_file_id, local_zip_path)
+
+            # Upload succeeded: remove locally, then stamp the new checksum.
+            for name in to_delete:
+                os.remove(os.path.join(folder, name))
+            write_local_md5(zip_file_id, md5_of_file(local_zip_path))
+
+        return {
+            "status": "ok",
+            "zip_file_id": zip_file_id,
+            "deleted": sorted(to_delete),
+            "not_found": not_found,
+        }
+
+    except HttpError as error:
+        raise drive_http_error(error)
+    except RETRYABLE:
+        raise network_http_error()
+    finally:
+        if os.path.exists(local_zip_path):
+            os.remove(local_zip_path)

@@ -137,6 +137,9 @@
   <div class="lightbox-inner">
     <button class="lightbox-close" id="lightbox-close">✕</button>
     <div id="lightbox-media"></div>
+    <div class="text-center mt-3">
+      <button class="btn btn-sm btn-outline-danger" id="lightbox-delete">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -157,12 +160,15 @@
   const ZIPIDS = { A: '1T9LFvSC-iKlFZVHI1zEnQyRJfrsipauN', B: '11Xh4U2T2u9b7ItpIllDtR58QFkZ1eyOp' };
 
   const API = 'https://memoriesarchive.onrender.com';
-  const UPLOAD_ENDPOINT = API + '/updateMemories';
+  const BATCH_ENDPOINT = API + '/updateMemoriesBatch';
+  const DELETE_ENDPOINT = API + '/deleteMemories';
   const GALLERY_ENDPOINT = API + '/gallery';
   const RESOURCE_ENDPOINT = API + '/resource';
 
   const mediaIndexes = { A: [], B: [] };
-  const pending = { A: { file: null, type: null }, B: { file: null, type: null } };
+  const pending = { A: { files: [] }, B: { files: [] } };
+  let currentOpen = null;     // { owner, filename } for the open lightbox
+  let pendingDelete = null;   // { owner, filenames } waiting on password
   const unlocked = { A: false, B: false };
   let pwModal = null;
 
@@ -221,14 +227,19 @@
 
   // ---------------- PASSWORD MODAL ----------------
   function requestPasswordThenProcess(owner, mode = 'upload') {
-    const isUpload = mode === 'upload';
+   const labels = {
+  upload: { text: 'add this to', btn: 'Confirm & add' },
+  delete: { text: 'delete this from', btn: 'Confirm & delete' },
+  view:   { text: 'view', btn: 'Confirm' }
+};
+const L = labels[mode];
     const content = document.getElementById('passwordModalContent');
 
     content.innerHTML = `
       <h5>Password please</h5>
-      <p class="sub">Confirm the password to ${isUpload ? 'add this to' : 'view'} ${escapeHTML(NAMES[owner])}'s gallery.</p>
-      <input type="password" class="form-control" id="modal-check-pass" placeholder="Enter password">
-      <button class="btn btn-rose w-100 mt-3" id="modal-check-btn">${isUpload ? 'Confirm & add' : 'Confirm'}</button>
+      <p class="sub">Confirm the password to ${L.text} ${escapeHTML(NAMES[owner])}'s gallery.</p>
+<input type="password" class="form-control" id="modal-check-pass" placeholder="Enter password">
+<button class="btn btn-rose w-100 mt-3" id="modal-check-btn">${L.btn}</button>
       <div class="text-danger text-center mt-2 small" id="modal-error"></div>
     `;
 
@@ -242,12 +253,15 @@
         return;
       }
       pwModal.hide();
-      if (isUpload) {
-        performUpload(owner);
-      } else {
-        unlocked[owner] = true;
-        renderGrid(owner);
-      }
+      if (mode === 'upload') {
+  performUpload(owner);
+} else if (mode === 'delete') {
+  if (pendingDelete) performDelete(pendingDelete.owner, pendingDelete.filenames);
+  pendingDelete = null;
+} else {
+  unlocked[owner] = true;
+  renderGrid(owner);
+}
     }
 
     document.getElementById('modal-check-btn').addEventListener('click', checkPass);
@@ -268,12 +282,12 @@
     pane.innerHTML = `
       <div class="panel">
         <h2>Add something Beautiful</h2>
-        <p class="sub">Choose a photo or video to send.</p>
+        <p class="sub">Choose one or more photos or videos to send.</p>
         <div class="row g-2 align-items-end">
           <div class="col-12 col-sm-5">
             <label class="form-label mb-1">File</label>
-            <div class="file-drop" id="drop-${owner}">Choose a photo or video…</div>
-            <input type="file" id="file-${owner}" accept="image/*,video/*" style="display:none;">
+            <div class="file-drop" id="drop-${owner}">Choose photos or videos…</div>
+            <input type="file" id="file-${owner}" accept="image/*,video/*" multiple style="display:none;">
           </div>
           <div class="col-12 col-sm-2">
             <button class="btn btn-rose w-100" id="upload-btn-${owner}">Add</button>
@@ -305,72 +319,70 @@
 
   // ---------------- UPLOAD ----------------
   function setupUploadHandlers(owner) {
-    const fileInput = document.getElementById('file-' + owner);
-    const dropLabel = document.getElementById('drop-' + owner);
-    const status = document.getElementById('status-' + owner);
+  const fileInput = document.getElementById('file-' + owner);
+  const dropLabel = document.getElementById('drop-' + owner);
+  const status = document.getElementById('status-' + owner);
 
-    dropLabel.addEventListener('click', () => fileInput.click());
+  dropLabel.addEventListener('click', () => fileInput.click());
 
-    fileInput.addEventListener('change', () => {
-      const file = fileInput.files[0];
-      status.textContent = '';
-      if (!file) return;
-
-      const isImage = file.type.startsWith('image/');
-      const isVideo = file.type.startsWith('video/');
-      if (!isImage && !isVideo) {
-        status.textContent = 'Please choose an image or video file.';
-        return;
-      }
-
-      pending[owner].file = file;
-      pending[owner].type = isImage ? 'image' : 'video';
-      dropLabel.textContent = file.name;
-      dropLabel.classList.add('has-file');
-    });
-
-    document.getElementById('upload-btn-' + owner).addEventListener('click', () => {
-      if (!pending[owner].file) { status.textContent = 'Choose a file first.'; return; }
-      requestPasswordThenProcess(owner, 'upload');
-    });
-  }
-
-  async function performUpload(owner) {
-    const status = document.getElementById('status-' + owner);
-    const p = pending[owner];
-    status.textContent = 'Uploading…';
-
-    try {
-      const formData = new FormData();
-      formData.append('zip_file_id', ZIPIDS[owner]);
-      formData.append('new_file', p.file);
-
-      const res = await fetch(UPLOAD_ENDPOINT, { method: 'POST', body: formData });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) throw new Error(data.detail || 'Upload failed with status ' + res.status);
-
-      if (data.status === 'duplicate') {
-        status.textContent = data.message;
-        return;
-      }
-
-      status.textContent = 'Uploaded! 🤍';
-      fileInputReset(owner);
-      pending[owner] = { file: null, type: null };
-      await loadGallery(owner); // pull the real list so the new item has a working URL
-    } catch (e) {
-      console.error(e);
-      status.textContent = 'Upload failed: ' + e.message;
+  fileInput.addEventListener('change', () => {
+    status.textContent = '';
+    const files = [...fileInput.files].filter(
+      f => f.type.startsWith('image/') || f.type.startsWith('video/')
+    );
+    if (!files.length) {
+      pending[owner].files = [];
+      status.textContent = 'Please choose image or video files.';
+      return;
     }
-  }
+    pending[owner].files = files;
+    dropLabel.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
+    dropLabel.classList.add('has-file');
+  });
 
-  function fileInputReset(owner) {
-    document.getElementById('file-' + owner).value = '';
-    const dropLabel = document.getElementById('drop-' + owner);
-    dropLabel.textContent = 'Choose a photo or video…';
-    dropLabel.classList.remove('has-file');
+  document.getElementById('upload-btn-' + owner).addEventListener('click', () => {
+    if (!pending[owner].files.length) { status.textContent = 'Choose files first.'; return; }
+    requestPasswordThenProcess(owner, 'upload');
+  });
+}
+
+async function performUpload(owner) {
+  const status = document.getElementById('status-' + owner);
+  const files = pending[owner].files;
+  status.textContent = `Uploading ${files.length} file${files.length > 1 ? 's' : ''}…`;
+
+  try {
+    const formData = new FormData();
+    formData.append('zip_file_id', ZIPIDS[owner]);
+    files.forEach(f => formData.append('new_files', f)); // field name must be new_files
+
+    const res = await fetch(BATCH_ENDPOINT, { method: 'POST', body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Upload failed with status ' + res.status);
+
+    const results = data.results || [];
+    const count = s => results.filter(r => r.status === s).length;
+    const parts = [];
+    if (count('ok')) parts.push(`${count('ok')} added 🤍`);
+    if (count('duplicate')) parts.push(`${count('duplicate')} duplicate skipped`);
+    if (count('rejected')) parts.push(`${count('rejected')} rejected`);
+    status.textContent = parts.join(' · ') || 'Nothing to add.';
+
+    fileInputReset(owner);
+    pending[owner] = { files: [] };
+    if (count('ok')) await loadGallery(owner);
+  } catch (e) {
+    console.error(e);
+    status.textContent = 'Upload failed: ' + e.message;
   }
+}
+
+function fileInputReset(owner) {
+  document.getElementById('file-' + owner).value = '';
+  const dropLabel = document.getElementById('drop-' + owner);
+  dropLabel.textContent = 'Choose photos or videos…';
+  dropLabel.classList.remove('has-file');
+}
 
   // ---------------- GRID ----------------
   function renderGrid(owner) {
@@ -404,9 +416,19 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
   }
 
+    document.getElementById('lightbox-delete').addEventListener('click', () => {
+    if (!currentOpen) return;
+    if (!confirm('Delete this memory? This cannot be undone.')) return;
+    pendingDelete = { owner: currentOpen.owner, filenames: [currentOpen.filename] };
+    closeLightbox();
+    requestPasswordThenProcess(pendingDelete.owner, 'delete');
+  });
+
+
   function openLightbox(owner, id) {
     const item = mediaIndexes[owner].find(m => m.id == id);
     if (!item) return;
+    currentOpen = { owner, filename: item.filename };
 
     document.getElementById('lightbox-media').innerHTML = item.type === 'image'
       ? `<img src="${mediaUrl(item)}" alt="">`
@@ -417,7 +439,28 @@
   function closeLightbox() {
     document.getElementById('lightbox').classList.remove('open');
     document.getElementById('lightbox-media').innerHTML = ''; // also stops any video
+    currentOpen = null;
   }
+
+  async function performDelete(owner, filenames) {
+  const status = document.getElementById('status-' + owner);
+  status.textContent = 'Deleting…';
+  try {
+    const res = await fetch(DELETE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zip_file_id: ZIPIDS[owner], filenames })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Delete failed with status ' + res.status);
+
+    status.textContent = `Deleted ${data.deleted.length} 🗑️`;
+    await loadGallery(owner);
+  } catch (e) {
+    console.error(e);
+    status.textContent = 'Delete failed: ' + e.message;
+  }
+}
 
   init();
 })();
